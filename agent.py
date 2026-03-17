@@ -70,11 +70,12 @@ def _build_message(image_path: str, prompt: str) -> types.Content:
 
 
 def create_agent() -> LlmAgent:
-    model = LiteLlm(
-        model=f"openai/{config.MODEL}",
-        api_base=config.API_BASE,
-        api_key=config.API_KEY,
-    )
+    model_kwargs: dict = {"model": config.MODEL}
+    if config.API_KEY:
+        model_kwargs["api_key"] = config.API_KEY
+    if config.API_BASE:
+        model_kwargs["api_base"] = config.API_BASE
+    model = LiteLlm(**model_kwargs)
     return LlmAgent(
         model=model,
         name="image_editor",

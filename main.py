@@ -10,6 +10,7 @@ from pathlib import Path
 
 import agent as agent_module
 from agent import AgentError, AuthenticationError, InsufficientBalanceError
+import config
 from tools import state
 
 
@@ -55,7 +56,7 @@ async def run(args: argparse.Namespace) -> None:
 
     print(f"Image : {input_path}")
     print(f"Prompt: {args.prompt}")
-    print(f"Model : {os.getenv('MODEL', 'GLM-4.6V')}\n")
+    print(f"Model : {config.MODEL}\n")
 
     try:
         response = await agent_module.run_agent(str(input_path), args.prompt)
@@ -75,7 +76,7 @@ async def run(args: argparse.Namespace) -> None:
         "input": str(input_path),
         "output": args.output,
         "prompt": args.prompt,
-        "model": os.getenv("MODEL", "GLM-4.6V"),
+        "model": config.MODEL,
         "agent_summary": response,
         "steps": steps,
     }
