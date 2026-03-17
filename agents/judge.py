@@ -1,5 +1,22 @@
 """Judge agent — evaluates the edited image and either accepts or requests refinement."""
 
+# TODO: Polish judge agent and build a proper eval set
+#
+# Evaluation set ideas:
+#   - Collect a corpus of (input_image, prompt, expected_output) triples covering
+#     each tool: crop, rotate, grayscale, sepia, brightness, contrast, saturation,
+#     sharpen, blur, vignette — plus multi-step combinations.
+#   - Define scoring rubrics per edit type (e.g. correct aspect ratio for crops,
+#     perceptual similarity for filter strength, correct orientation for rotations).
+#   - Add an automated eval runner that scores judge accept/reject decisions against
+#     ground-truth labels so we can tune the judge prompt without manual review.
+#   - Consider a stricter judge prompt variant and a lenient one — measure which
+#     produces better final outputs across the eval set.
+#   - Track judge feedback quality: does the feedback actually lead to a better
+#     result on the next iteration? Use this to refine the feedback prompt.
+#   - Explore using a stronger model (e.g. gemini-3.1-pro or claude-opus) as judge
+#     while keeping a lighter model for the editor to balance cost vs quality.
+
 import mimetypes
 
 from google.adk.agents import LlmAgent
