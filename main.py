@@ -8,8 +8,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import agent as agent_module
 from agent import AgentError, AuthenticationError, InsufficientBalanceError
+from agents.pipeline import run_pipeline
 import config
 from tools import state
 
@@ -22,13 +22,22 @@ def parse_args() -> argparse.Namespace:
 Examples:
   python main.py --image photo.jpg --prompt "make it black and white and crop to a square"
   python main.py --image photo.jpg --prompt "add a warm vintage look" --output vintage.jpg
-  python main.py --image photo.jpg --prompt "sharpen and boost contrast" --trace my_trace.json
+  python main.py --image photo.jpg --prompt "sharpen and boost contrast" --max-iterations 5
+  python main.py --image photo.jpg --prompt "crop to square" --target-iterations 2
         """,
     )
     parser.add_argument("--image", required=True, help="Path to the input image")
     parser.add_argument("--prompt", required=True, help="Natural language editing instruction")
-    parser.add_argument("--output", default=None, help="Output image path (default: output/<input-stem>_edited.<ext>)")
-    parser.add_argument("--trace", default=None, help="Trace output path (default: output/<input-stem>_trace.json)")
+    parser.add_argument("--output", default=None, help="Output image path (default: output/<stem>_edited.<ext>)")
+    parser.add_argument("--trace", default=None, help="Trace output path (default: output/<stem>_trace.json)")
+    parser.add_argument(
+        "--max-iterations", type=int, default=config.MAX_ITERATIONS,
+        help=f"Hard ceiling on editor→judge cycles (default: {config.MAX_ITERATIONS})",
+    )
+    parser.add_argument(
+        "--target-iterations", type=int, default=None,
+        help="Accept result after this many iterations regardless of judge verdict",
+    )
     return parser.parse_args()
 
 
@@ -42,10 +51,8 @@ async def run(args: argparse.Namespace) -> None:
 
     output_path = args.output or str(output_dir / f"{input_path.stem}_edited{input_path.suffix}")
     trace_path = args.trace or str(output_dir / f"{input_path.stem}_trace.json")
-    args.output = output_path
-    args.trace = trace_path
 
-    # Copy input to a temp working file so originals are never overwritten
+    # Copy input to a temp working file — original is never modified
     suffix = input_path.suffix or ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         working_path = tmp.name
@@ -54,43 +61,59 @@ async def run(args: argparse.Namespace) -> None:
     state.set_working_path(working_path)
     state.reset_trace()
 
-    print(f"Image : {input_path}")
-    print(f"Prompt: {args.prompt}")
-    print(f"Model : {config.MODEL}\n")
+    print(f"Image            : {input_path}")
+    print(f"Prompt           : {args.prompt}")
+    print(f"Editor model     : {config.EDITOR_MODEL}")
+    print(f"Judge model      : {config.JUDGE_MODEL}")
+    print(f"Max iterations   : {args.max_iterations}")
+    if args.target_iterations:
+        print(f"Target iterations: {args.target_iterations}")
+    print()
 
     try:
-        response = await agent_module.run_agent(str(input_path), args.prompt)
-    except (AgentError, FileNotFoundError, KeyboardInterrupt) as e:
-        # Clean up temp file before re-raising
+        response = await run_pipeline(
+            original_image_path=str(input_path),
+            working_image_path=working_path,
+            prompt=args.prompt,
+            max_iterations=args.max_iterations,
+            target_iterations=args.target_iterations,
+        )
+    except (AgentError, FileNotFoundError, KeyboardInterrupt):
         if os.path.exists(working_path):
             os.unlink(working_path)
         raise
     finally:
-        # Write whatever progress was made, even on partial runs
         if os.path.exists(working_path):
-            shutil.copy2(working_path, args.output)
+            shutil.copy2(working_path, output_path)
             os.unlink(working_path)
 
     steps = state.get_trace()
+    iterations_used = state._current_iteration
+
     trace_data = {
         "input": str(input_path),
-        "output": args.output,
+        "output": output_path,
         "prompt": args.prompt,
-        "model": config.MODEL,
+        "editor_model": config.EDITOR_MODEL,
+        "judge_model": config.JUDGE_MODEL,
+        "max_iterations": args.max_iterations,
+        "target_iterations": args.target_iterations,
+        "iterations_used": iterations_used,
         "agent_summary": response,
         "steps": steps,
     }
-    with open(args.trace, "w") as f:
+    with open(trace_path, "w") as f:
         json.dump(trace_data, f, indent=2)
 
-    print(f"Output : {args.output}")
-    print(f"Trace  : {args.trace}")
-    print(f"Steps  : {len(steps)}")
+    print(f"Output     : {output_path}")
+    print(f"Trace      : {trace_path}")
+    print(f"Iterations : {iterations_used}")
+    print(f"Tool calls : {len(steps)}")
     for i, step in enumerate(steps, 1):
         status = "✓" if step["success"] else "✗"
         args_str = ", ".join(f"{k}={v}" for k, v in step["args"].items()) if step["args"] else ""
-        print(f"  {i}. {status} {step['tool']}({args_str})")
-    print(f"\nAgent: {response}")
+        print(f"  {i}. [iter {step['iteration']}] {status} {step['tool']}({args_str})")
+    print(f"\nSummary: {response}")
 
 
 def main() -> None:
