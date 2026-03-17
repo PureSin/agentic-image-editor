@@ -1,0 +1,19 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# Outputs — ignore contents but keep the directory
+output/*
+!output/.gitkeep
+
+# Editor swap files
+*.swp
+*.swo
+
+# macOS
+.DS_Store
